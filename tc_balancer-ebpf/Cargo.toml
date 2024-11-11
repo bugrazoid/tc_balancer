@@ -1,0 +1,18 @@
+[package]
+name = "tc_balancer-ebpf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tc_balancer-common = { path = "../tc_balancer-common" }
+
+aya-ebpf = { workspace = true }
+aya-log-ebpf = { workspace = true }
+network-types = { workspace = true }
+
+[build-dependencies]
+which = { workspace = true }
+
+[[bin]]
+name = "tc_balancer"
+path = "src/main.rs"

@@ -13,9 +13,8 @@ use network_types::{
     ip::{self, IpHdr, IpProto, Ipv4Hdr, Ipv6Hdr},
 };
 use tc_balancer_ebpf::{
-    tc::{ptr_at, ptr_at_mut},
-    ETH_HDR_LEN, ETH_HDR_OFFSET, ETH_P_IP, IPPROTO_TCP, IP_HDR_LEN, IP_HDR_OFFSET, TCP_HDR_LEN,
-    TCP_HDR_OFFSET,
+    parse_packet, ETH_HDR_LEN, ETH_HDR_OFFSET, ETH_P_IP, IPPROTO_TCP, IP_HDR_LEN, IP_HDR_OFFSET,
+    TCP_HDR_LEN, TCP_HDR_OFFSET,
 };
 
 #[classifier]
@@ -34,62 +33,38 @@ pub fn tc_balancer_egress(ctx: TcContext) -> i32 {
     }
 }
 
-fn try_tc_balancer(mut ctx: TcContext, direction: &str) -> Result<i32, c_long> {
-    let eth = ptr_at::<ethhdr>(&ctx, ETH_HDR_OFFSET).ok_or(1)?;
-    let eth = unsafe { &(*eth) };
-
-    if eth.h_proto != EtherType::Ipv4 as u16 {
-        debug!(
-            &ctx,
-            "drop packet because it is not ipv4: 0x{:x}",
-            u16::from_be(eth.h_proto)
-        );
-        return Ok(TC_ACT_PIPE);
-    }
-
-    let ip = ptr_at::<iphdr>(&ctx, IP_HDR_OFFSET).ok_or(2)?;
-    let ip = unsafe { &(*ip) };
-
-    if ip.protocol != IpProto::Tcp as u8 {
-        debug!(&ctx, "received a Ipv4 packet not tcp: {}", ip.protocol);
-        return Ok(TC_ACT_PIPE);
-    }
-
-    let addrs = unsafe { ip.__bindgen_anon_1.addrs };
-
-    let src_addr = Ipv4Addr::from(u32::from_be(addrs.saddr));
-    let dst_addr = Ipv4Addr::from(u32::from_be(addrs.daddr));
-
-    let tcp = ptr_at_mut::<tcphdr>(&ctx, TCP_HDR_OFFSET).ok_or(3)?;
-    let tcp = unsafe { &mut (*tcp) };
-
-    let src_port = u16::from_be(tcp.source);
-    let dst_port = u16::from_be(tcp.dest);
+fn try_tc_balancer(ctx: TcContext, direction: &str) -> Result<i32, c_long> {
+    let p = parse_packet(&ctx).ok_or(1)?;
 
     debug!(
         &ctx,
-        "{}, received a packet {}:{} -> {}:{}", direction, src_addr, src_port, dst_addr, dst_port
+        "{}, received a packet {}:{} -> {}:{}",
+        direction,
+        p.src.ip,
+        p.src.port,
+        p.dst.ip,
+        p.dst.port
     );
 
-    if src_port == 8081 || dst_port == 8080 {
+    if p.src.port == 8081 || p.dst.port == 8080 {
         info!(
             &ctx,
             "{}, received a packet {}:{} -> {}:{}",
             direction,
-            src_addr,
-            src_port,
-            dst_addr,
-            dst_port
+            p.src.ip,
+            p.src.port,
+            p.dst.ip,
+            p.dst.port
         );
     }
 
-    if dst_port == 8080 {
-        tcp.dest = 8081u16.to_be();
+    if p.dst.port == 8080 {
+        p.tcp.dest = 8081u16.to_be();
         return Ok(TC_ACT_PIPE);
     }
 
-    if src_port == 8081 {
-        tcp.source = 8080u16.to_be();
+    if p.src.port == 8081 {
+        p.tcp.source = 8080u16.to_be();
         return Ok(TC_ACT_PIPE);
     }
 

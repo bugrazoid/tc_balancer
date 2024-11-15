@@ -8,14 +8,16 @@ use aya_ebpf::{
     programs::TcContext,
 };
 use aya_log_ebpf::{debug, error, info};
-use tc_balancer_common::{Config, Port, RedirectEgressId, CONFIG_MAP_LEN, REDIRECT_EGRESS_MAP_LEN};
+use tc_balancer_common::{
+    Config, Port, RedirectLocalPortKey, CONFIG_MAP_LEN, REDIRECT_EGRESS_MAP_LEN,
+};
 use tc_balancer_ebpf::{parse_packet, EgressPacket, IngressPacket, EGRESS, INGRESS};
 
 #[map(name = "CONFIG")]
 static mut CONFIG: HashMap<Port, Config> = HashMap::with_max_entries(CONFIG_MAP_LEN, 0);
 
 #[map(name = "REDIRECT_EGRESS")]
-static mut REDIRECT_EGRESS: LruHashMap<RedirectEgressId, Port> =
+static mut REDIRECT_EGRESS: LruHashMap<RedirectLocalPortKey, Port> =
     LruHashMap::with_max_entries(REDIRECT_EGRESS_MAP_LEN, 0);
 
 #[classifier]
@@ -84,13 +86,13 @@ fn process_ingress(ctx: &TcContext, mut packet: IngressPacket) -> Result<i32, ()
         packet.set_local_port(config.redirect_port);
 
         let key =
-            RedirectEgressId::new(packet.remote_ip(), packet.remote_port(), packet.local_ip());
+            RedirectLocalPortKey::new(packet.remote_ip(), packet.remote_port(), packet.local_ip());
         info!(
             ctx,
             "{}:{} -> {}",
-            key.src_addr,
-            key.src_port.inner(),
-            key.dst_addr
+            key.remote_ip,
+            key.remote_port.inner(),
+            key.local_ip
         );
         unsafe { REDIRECT_EGRESS.insert(&key, &config.redirect_port, 0) }.map_err(|_| ())?;
 
@@ -108,15 +110,16 @@ fn process_ingress(ctx: &TcContext, mut packet: IngressPacket) -> Result<i32, ()
 }
 
 fn process_egress(ctx: &TcContext, mut packet: EgressPacket) -> Result<i32, ()> {
-    let key = RedirectEgressId::new(packet.remote_ip(), packet.remote_port(), packet.local_ip());
+    let key =
+        RedirectLocalPortKey::new(packet.remote_ip(), packet.remote_port(), packet.local_ip());
 
     if let Some(redirect_port) = unsafe { REDIRECT_EGRESS.get(&key) } {
         info!(
             ctx,
             "{}:{} -> {}",
-            key.src_addr,
-            key.src_port.inner(),
-            key.dst_addr
+            key.remote_ip,
+            key.remote_port.inner(),
+            key.local_ip
         );
         packet.set_local_port(*redirect_port);
         // return Ok(TC_ACT_PIPE);

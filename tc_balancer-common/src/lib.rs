@@ -35,21 +35,21 @@ pub struct Config {
 unsafe impl aya::Pod for Config {}
 
 #[derive(Clone, Copy)]
-pub struct RedirectEgressId {
-    pub src_addr: Ipv4Addr,
-    pub dst_addr: Ipv4Addr,
-    pub src_port: Port,
+pub struct RedirectLocalPortKey {
+    pub remote_ip: Ipv4Addr,
+    pub remote_port: Port,
+    pub local_ip: Ipv4Addr,
 }
 
-impl RedirectEgressId {
-    pub fn new(src_addr: Ipv4Addr, src_port: Port, dst_addr: Ipv4Addr) -> Self {
+impl RedirectLocalPortKey {
+    pub fn new(remote_ip: Ipv4Addr, remote_port: Port, local_ip: Ipv4Addr) -> Self {
         Self {
-            src_addr,
-            dst_addr,
-            src_port,
+            remote_ip,
+            remote_port,
+            local_ip,
         }
     }
 }
 
 #[cfg(feature = "user")]
-unsafe impl aya::Pod for RedirectEgressId {}
+unsafe impl aya::Pod for RedirectLocalPortKey {}

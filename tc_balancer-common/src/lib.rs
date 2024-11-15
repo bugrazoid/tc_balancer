@@ -1,6 +1,9 @@
 #![no_std]
 
+use core::net::Ipv4Addr;
+
 pub const CONFIG_MAP_LEN: u32 = 8;
+pub const REDIRECT_EGRESS_MAP_LEN: u32 = 8;
 
 #[derive(PartialEq, Clone, Copy)]
 pub struct Port(u16);
@@ -30,3 +33,23 @@ pub struct Config {
 
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for Config {}
+
+#[derive(Clone, Copy)]
+pub struct RedirectEgressId {
+    pub src_addr: Ipv4Addr,
+    pub dst_addr: Ipv4Addr,
+    pub src_port: Port,
+}
+
+impl RedirectEgressId {
+    pub fn new(src_addr: Ipv4Addr, src_port: Port, dst_addr: Ipv4Addr) -> Self {
+        Self {
+            src_addr,
+            dst_addr,
+            src_port,
+        }
+    }
+}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for RedirectEgressId {}

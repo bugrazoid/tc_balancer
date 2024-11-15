@@ -1,6 +1,8 @@
-use aya::programs::{tc, SchedClassifier, TcAttachType};
+use aya::{
+    maps::HashMap,
+    programs::{tc, SchedClassifier, TcAttachType},
+};
 use clap::Parser;
-#[rustfmt::skip]
 use log::{debug, warn};
 use tokio::signal;
 

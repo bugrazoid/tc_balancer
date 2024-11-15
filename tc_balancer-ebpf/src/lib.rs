@@ -28,9 +28,24 @@ pub const IP_HDR_LEN: usize = mem::size_of::<iphdr>();
 pub const TCP_HDR_OFFSET: usize = IP_HDR_OFFSET + IP_HDR_LEN;
 pub const TCP_HDR_LEN: usize = mem::size_of::<tcphdr>();
 
+#[derive(PartialEq)]
+pub struct Port(u16);
+
+impl Port {
+    pub fn inner(&self) -> u16 {
+        self.0
+    }
+}
+
+impl From<u16> for Port {
+    fn from(value: u16) -> Self {
+        Port(value)
+    }
+}
+
 pub struct Endpoint {
     pub ip: Ipv4Addr,
-    pub port: u16,
+    pub port: Port,
 }
 
 pub struct ParsedPacket<'a> {
@@ -81,11 +96,11 @@ pub fn parse_packet<'a, CTX: Data + EbpfContext>(ctx: &CTX) -> Option<ParsedPack
         protocol: EtherType::Ipv4,
         src: Endpoint {
             ip: src_addr,
-            port: src_port,
+            port: src_port.into(),
         },
         dst: Endpoint {
             ip: dst_addr,
-            port: dst_port,
+            port: dst_port.into(),
         },
     })
 }

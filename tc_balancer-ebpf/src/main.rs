@@ -1,8 +1,6 @@
 #![no_std]
 #![no_main]
 
-use core::error;
-
 use aya_ebpf::{
     bindings::TC_ACT_PIPE,
     macros::{classifier, map},
@@ -11,7 +9,7 @@ use aya_ebpf::{
 };
 use aya_log_ebpf::{debug, error, info};
 use tc_balancer_common::{Config, Port, RedirectEgressId, CONFIG_MAP_LEN, REDIRECT_EGRESS_MAP_LEN};
-use tc_balancer_ebpf::{parse_packet, ParsedPacket, EGRESS, INGRESS};
+use tc_balancer_ebpf::{parse_packet, EgressPacket, IngressPacket, EGRESS, INGRESS};
 
 #[map(name = "CONFIG")]
 static mut CONFIG: HashMap<Port, Config> = HashMap::with_max_entries(CONFIG_MAP_LEN, 0);
@@ -65,31 +63,28 @@ fn try_tc_balancer(ctx: &TcContext, direction: &str) -> Result<i32, ()> {
     }
 
     match direction {
-        "ingress" => process_ingress(ctx, p)?,
-        "egress" => process_egress(ctx, p)?,
+        "ingress" => process_ingress(ctx, p.into())?,
+        "egress" => process_egress(ctx, p.into())?,
         _ => TC_ACT_PIPE,
     };
 
     Ok(TC_ACT_PIPE)
 }
 
-fn process_ingress(ctx: &TcContext, ingress_packet: ParsedPacket) -> Result<i32, ()> {
-    if let Some(config) = unsafe { CONFIG.get(&ingress_packet.dst.port) } {
+fn process_ingress(ctx: &TcContext, mut packet: IngressPacket) -> Result<i32, ()> {
+    if let Some(config) = unsafe { CONFIG.get(&packet.local_port()) } {
         info!(
             ctx,
             "{}: redirect dst port {} => {}",
             INGRESS,
-            ingress_packet.dst.port.inner(),
+            packet.local_port().inner(),
             config.redirect_port.inner()
         );
 
-        ingress_packet.tcp.dest = config.redirect_port.inner().to_be();
+        packet.set_local_port(config.redirect_port);
 
-        let key = RedirectEgressId::new(
-            ingress_packet.src.ip,
-            ingress_packet.src.port,
-            ingress_packet.dst.ip,
-        );
+        let key =
+            RedirectEgressId::new(packet.remote_ip(), packet.remote_port(), packet.local_ip());
         info!(
             ctx,
             "{}:{} -> {}",
@@ -106,18 +101,14 @@ fn process_ingress(ctx: &TcContext, ingress_packet: ParsedPacket) -> Result<i32,
         ctx,
         "{}: no config for port {}",
         EGRESS,
-        ingress_packet.dst.port.inner()
+        packet.local_port().inner()
     );
 
     Ok(TC_ACT_PIPE)
 }
 
-fn process_egress(ctx: &TcContext, egress_packet: ParsedPacket) -> Result<i32, ()> {
-    let key = RedirectEgressId::new(
-        egress_packet.dst.ip,
-        egress_packet.dst.port,
-        egress_packet.src.ip,
-    );
+fn process_egress(ctx: &TcContext, mut packet: EgressPacket) -> Result<i32, ()> {
+    let key = RedirectEgressId::new(packet.remote_ip(), packet.remote_port(), packet.local_ip());
 
     if let Some(redirect_port) = unsafe { REDIRECT_EGRESS.get(&key) } {
         info!(
@@ -127,7 +118,7 @@ fn process_egress(ctx: &TcContext, egress_packet: ParsedPacket) -> Result<i32, (
             key.src_port.inner(),
             key.dst_addr
         );
-        egress_packet.tcp.source = redirect_port.inner().to_be();
+        packet.set_local_port(*redirect_port);
         // return Ok(TC_ACT_PIPE);
     }
 

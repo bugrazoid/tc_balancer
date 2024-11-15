@@ -32,6 +32,76 @@ pub const TCP_HDR_LEN: usize = mem::size_of::<tcphdr>();
 pub const INGRESS: &'static str = "ingress";
 pub const EGRESS: &'static str = "egress";
 
+pub struct IngressPacket<'a>(ParsedPacket<'a>);
+
+impl<'a> IngressPacket<'a> {
+    pub fn new(parsed_packet: ParsedPacket<'a>) -> Self {
+        Self(parsed_packet)
+    }
+
+    pub fn remote_ip(&self) -> Ipv4Addr {
+        self.0.src.ip
+    }
+
+    pub fn remote_port(&self) -> Port {
+        self.0.src.port
+    }
+
+    pub fn local_ip(&self) -> Ipv4Addr {
+        self.0.dst.ip
+    }
+
+    pub fn local_port(&self) -> Port {
+        self.0.dst.port
+    }
+
+    pub fn set_local_port(&mut self, port: Port) {
+        self.0.dst.port = port;
+        self.0.tcp.dest = port.inner().to_be();
+    }
+}
+
+impl<'a> From<ParsedPacket<'a>> for EgressPacket<'a> {
+    fn from(parsed_packet: ParsedPacket<'a>) -> Self {
+        EgressPacket::new(parsed_packet)
+    }
+}
+
+pub struct EgressPacket<'a>(ParsedPacket<'a>);
+
+impl<'a> EgressPacket<'a> {
+    pub fn new(parsed_packet: ParsedPacket<'a>) -> Self {
+        Self(parsed_packet)
+    }
+
+    pub fn remote_ip(&self) -> Ipv4Addr {
+        self.0.dst.ip
+    }
+
+    pub fn remote_port(&self) -> Port {
+        self.0.dst.port
+    }
+
+    pub fn local_ip(&self) -> Ipv4Addr {
+        self.0.src.ip
+    }
+
+    pub fn local_port(&self) -> Port {
+        self.0.src.port
+    }
+
+    pub fn set_local_port(&mut self, port: Port) {
+        self.0.src.port = port;
+        self.0.tcp.source = port.inner().to_be();
+    }
+}
+
+impl<'a> From<ParsedPacket<'a>> for IngressPacket<'a> {
+    fn from(parsed_packet: ParsedPacket<'a>) -> Self {
+        IngressPacket::new(parsed_packet)
+    }
+}
+
 pub struct Endpoint {
     pub ip: Ipv4Addr,
     pub port: Port,

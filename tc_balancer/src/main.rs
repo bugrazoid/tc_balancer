@@ -4,6 +4,7 @@ use aya::{
 };
 use clap::Parser;
 use log::{debug, warn};
+use tc_balancer_common::{Config, Port};
 use tokio::signal;
 
 #[derive(Debug, Parser)]
@@ -51,6 +52,22 @@ async fn main() -> anyhow::Result<()> {
         .try_into()?;
     program_ingress.load()?;
     program_ingress.attach(&iface, TcAttachType::Ingress)?;
+
+    let mut config_map = HashMap::try_from(ebpf.map_mut("CONFIG").expect("Get data"))?;
+    config_map.insert(
+        Port::new(8080),
+        Config {
+            redirect_port: Port::new(8081),
+        },
+        0,
+    )?;
+    config_map.insert(
+        Port::new(8081),
+        Config {
+            redirect_port: Port::new(8081),
+        },
+        0,
+    )?;
 
     let program_egress: &mut SchedClassifier =
         ebpf.program_mut("tc_balancer_egress").unwrap().try_into()?;

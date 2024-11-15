@@ -11,6 +11,7 @@ use aya_ebpf::{programs::TcContext, EbpfContext};
 use aya_log_ebpf::debug;
 use bindings::{ethhdr, iphdr, tcphdr};
 use network_types::{eth::EtherType, ip::IpProto};
+use tc_balancer_common::Port;
 
 pub const IPPROTO_TCP: u8 = 0x06;
 pub const IPPROTO_UDP: u8 = 0x11;
@@ -28,20 +29,8 @@ pub const IP_HDR_LEN: usize = mem::size_of::<iphdr>();
 pub const TCP_HDR_OFFSET: usize = IP_HDR_OFFSET + IP_HDR_LEN;
 pub const TCP_HDR_LEN: usize = mem::size_of::<tcphdr>();
 
-#[derive(PartialEq)]
-pub struct Port(u16);
-
-impl Port {
-    pub fn inner(&self) -> u16 {
-        self.0
-    }
-}
-
-impl From<u16> for Port {
-    fn from(value: u16) -> Self {
-        Port(value)
-    }
-}
+pub const INGRESS: &'static str = "ingress";
+pub const EGRESS: &'static str = "egress";
 
 pub struct Endpoint {
     pub ip: Ipv4Addr,

@@ -61,13 +61,13 @@ async fn main() -> anyhow::Result<()> {
         },
         0,
     )?;
-    config_map.insert(
-        Port::new(8081),
-        Config {
-            redirect_port: Port::new(8081),
-        },
-        0,
-    )?;
+    // config_map.insert(
+    //     Port::new(8081),
+    //     Config {
+    //         redirect_port: Port::new(8081),
+    //     },
+    //     0,
+    // )?;
 
     let program_egress: &mut SchedClassifier =
         ebpf.program_mut("tc_balancer_egress").unwrap().try_into()?;

@@ -9,15 +9,15 @@ use aya_ebpf::{
 };
 use aya_log_ebpf::{debug, error, info};
 use tc_balancer_common::{
-    Config, Port, RedirectLocalPortKey, CONFIG_MAP_LEN, REDIRECT_EGRESS_MAP_LEN,
+    Config, Port, PortMap, RedirectLocalPortKey, CONFIG_MAP_LEN, REDIRECT_EGRESS_MAP_LEN,
 };
 use tc_balancer_ebpf::{parse_packet, EgressPacket, IngressPacket, EGRESS, INGRESS};
 
 #[map(name = "CONFIG")]
-static mut CONFIG: HashMap<Port, Config> = HashMap::with_max_entries(CONFIG_MAP_LEN, 0);
+static CONFIG: HashMap<Port, Config> = HashMap::with_max_entries(CONFIG_MAP_LEN, 0);
 
 #[map(name = "REDIRECT_EGRESS")]
-static mut REDIRECT_EGRESS: LruHashMap<RedirectLocalPortKey, Port> =
+static REDIRECT_EGRESS: LruHashMap<RedirectLocalPortKey, PortMap> =
     LruHashMap::with_max_entries(REDIRECT_EGRESS_MAP_LEN, 0);
 
 #[classifier]
@@ -40,7 +40,9 @@ pub fn tc_balancer_egress(ctx: TcContext) -> i32 {
 }
 
 fn try_tc_balancer(ctx: &TcContext, direction: &str) -> Result<i32, ()> {
-    let p = parse_packet(ctx).ok_or(())?;
+    let Some(p) = parse_packet(ctx) else {
+        return Ok(TC_ACT_PIPE);
+    };
 
     debug!(
         ctx,
@@ -52,18 +54,6 @@ fn try_tc_balancer(ctx: &TcContext, direction: &str) -> Result<i32, ()> {
         p.dst.port.inner()
     );
 
-    if p.src.port == 8081.into() || p.dst.port == 8080.into() {
-        info!(
-            ctx,
-            "{}: packet {}:{} -> {}:{}",
-            direction,
-            p.src.ip,
-            p.src.port.inner(),
-            p.dst.ip,
-            p.dst.port.inner()
-        );
-    }
-
     match direction {
         "ingress" => process_ingress(ctx, p.into())?,
         "egress" => process_egress(ctx, p.into())?,
@@ -74,8 +64,16 @@ fn try_tc_balancer(ctx: &TcContext, direction: &str) -> Result<i32, ()> {
 }
 
 fn process_ingress(ctx: &TcContext, mut packet: IngressPacket) -> Result<i32, ()> {
+    let key =
+        RedirectLocalPortKey::new(packet.remote_ip(), packet.remote_port(), packet.local_ip());
+
+    if let Some(port_map) = unsafe { REDIRECT_EGRESS.get(&key) } {
+        packet.set_local_port(port_map.redirect_port);
+        return Ok(TC_ACT_PIPE);
+    }
+
     if let Some(config) = unsafe { CONFIG.get(&packet.local_port()) } {
-        info!(
+        debug!(
             ctx,
             "{}: redirect dst port {} => {}",
             INGRESS,
@@ -83,28 +81,15 @@ fn process_ingress(ctx: &TcContext, mut packet: IngressPacket) -> Result<i32, ()
             config.redirect_port.inner()
         );
 
+        let port_map = PortMap {
+            original_port: packet.local_port(),
+            redirect_port: config.redirect_port,
+        };
+        REDIRECT_EGRESS.insert(&key, &port_map, 0).map_err(|_| ())?;
+
         packet.set_local_port(config.redirect_port);
-
-        let key =
-            RedirectLocalPortKey::new(packet.remote_ip(), packet.remote_port(), packet.local_ip());
-        info!(
-            ctx,
-            "{}:{} -> {}",
-            key.remote_ip,
-            key.remote_port.inner(),
-            key.local_ip
-        );
-        unsafe { REDIRECT_EGRESS.insert(&key, &config.redirect_port, 0) }.map_err(|_| ())?;
-
         return Ok(TC_ACT_PIPE);
     }
-
-    debug!(
-        ctx,
-        "{}: no config for port {}",
-        EGRESS,
-        packet.local_port().inner()
-    );
 
     Ok(TC_ACT_PIPE)
 }
@@ -113,16 +98,23 @@ fn process_egress(ctx: &TcContext, mut packet: EgressPacket) -> Result<i32, ()> 
     let key =
         RedirectLocalPortKey::new(packet.remote_ip(), packet.remote_port(), packet.local_ip());
 
-    if let Some(redirect_port) = unsafe { REDIRECT_EGRESS.get(&key) } {
-        info!(
+    if packet.local_port().inner() == 8081 {
+        // if let Some(port_map) = unsafe { REDIRECT_EGRESS.get(&key) }.copied() {
+        debug!(
             ctx,
-            "{}:{} -> {}",
+            "egress: {}:{} -> {}",
             key.remote_ip,
             key.remote_port.inner(),
             key.local_ip
         );
-        packet.set_local_port(*redirect_port);
+        // packet.set_local_port(port_map.original_port);
+        packet.set_local_port(Port::from(8080));
         // return Ok(TC_ACT_PIPE);
+    }
+
+    if let Some(port) = unsafe { REDIRECT_EGRESS.get(&key) }.copied() {
+        info!(ctx, "egress: {}", port.original_port.inner());
+        packet.set_local_port(port.original_port);
     }
 
     Ok(TC_ACT_PIPE)

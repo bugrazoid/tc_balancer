@@ -53,3 +53,12 @@ impl RedirectLocalPortKey {
 
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for RedirectLocalPortKey {}
+
+#[derive(Clone, Copy)]
+pub struct PortMap {
+    pub original_port: Port,
+    pub redirect_port: Port,
+}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for PortMap {}

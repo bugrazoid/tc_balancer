@@ -1,5 +1,5 @@
+mod cargo;
 mod codegen;
-mod run;
 
 use anyhow::Result;
 use clap::Parser;
@@ -12,7 +12,8 @@ pub struct Options {
 
 #[derive(Debug, Parser)]
 enum Command {
-    Run(run::Options),
+    Run(cargo::Options),
+    Build(cargo::Options),
     Generate,
 }
 
@@ -20,7 +21,8 @@ fn main() -> Result<()> {
     let Options { command } = Parser::parse();
 
     match command {
-        Command::Run(opts) => run::run(opts),
+        Command::Run(opts) => cargo::run(opts),
+        Command::Build(opts) => cargo::build(opts),
         Command::Generate => codegen::generate(),
     }
 }
